@@ -5,10 +5,14 @@ var duration = 0.2
 var elapsed = 0.0
 var start_position = Vector2.ZERO
 var initialized = false
+# Emitted when the drop reaches target, allowing main logic to
+# safely run KLAX checks after animation completes.
+signal landed
 
 # Animates a dropped stack tile toward its bin target position.
 # Disables processing after arrival to reduce per-frame overhead.
 func _process(delta):
+	# Cache starting point on first frame so easing math has a stable origin.
 	if not initialized:
 		start_position = global_position
 		initialized = true
@@ -27,4 +31,5 @@ func _process(delta):
 	
 	if t >= 1.0:
 		global_position = target_position
+		emit_signal("landed")
 		set_process(false)

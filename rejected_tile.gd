@@ -1,5 +1,6 @@
 extends Node2D
 
+# Velocity/physics tuning for bin-rejection animation.
 var launch_velocity = Vector2.ZERO
 var gravity = 1500.0
 var angular_velocity = 4.2
@@ -7,6 +8,7 @@ var damping = 0.995
 var has_bounced = false
 
 func _process(delta):
+	# Integrate simple arcade-like motion.
 	launch_velocity.y += gravity * delta
 	position += launch_velocity * delta
 	rotation += angular_velocity * delta

@@ -9,10 +9,13 @@ extends Node2D
 var score = 0
 var lives = 3
 var bin_contents = [[], [], [], [], []] # 2D array for the 5 bins
+var pending_drop_animations = 0
 const BIN_TILE_SIZE = Vector2(70, 16)
+var runtime_tile_size = BIN_TILE_SIZE
 const MAX_BIN_HEIGHT = 5
 const DEBUG_TOOLS_ENABLED = true
 var DESKTOP_DEBUG_INPUT_ENABLED = OS.has_feature("editor")
+const USE_REFERENCE_BELT_BACKGROUND = true
 const CANDY_COLORS = [
 	Color("ff6f73"),
 	Color("6ec1ff"),
@@ -28,11 +31,21 @@ var DroppedTile = preload("res://dropped_tile.gd")
 var RejectedTile = preload("res://rejected_tile.gd")
 # Preload debug script s
 var DebugTools = preload("res://debug_tools.gd")
+var belt_background_texture: Texture2D
+var landing_tray_texture: Texture2D
 
 
 # Runs once when the scene is ready.
 # Wires up timer/button signals and paints the initial HUD.
 func _ready():
+	if ResourceLoader.exists("res://assets/belt_background.png"):
+		belt_background_texture = load("res://assets/belt_background.png")
+	else:
+		push_warning("Missing belt background at res://assets/belt_background.png")
+	if ResourceLoader.exists("res://assets/landing tray.png"):
+		landing_tray_texture = load("res://assets/landing tray.png")
+	else:
+		push_warning("Missing landing tray at res://assets/landing tray.png")
 	tile_spawner.timeout.connect(_on_tile_spawner_timeout)
 	drop_button.pressed.connect(_on_drop_button_pressed) 
 	apply_candy_style()
@@ -43,6 +56,8 @@ func _ready():
 # Handles global keyboard input for gameplay and debug shortcuts.
 # Uses `_input` so controls still work even when UI nodes consume events.
 func _input(event):
+	if event is InputEventKey and get_viewport().gui_get_focus_owner() != null:
+		return
 	var is_key_repeat = event is InputEventKey and event.echo
 	if DESKTOP_DEBUG_INPUT_ENABLED and not is_key_repeat and event.is_action_pressed("ui_accept"):
 		_on_drop_button_pressed()
@@ -81,15 +96,18 @@ func _on_tile_spawner_timeout():
 	# Use the Y position of the top edge
 	var spawn_y = top_left.y
 	
-	# Combine the conveyor's position with our calculated spawn point
-	var spawn_position = conveyor.position + Vector2(spawn_x, spawn_y)
+	# Convert conveyor-local spawn point to world-space to remain correct
+	# even if parent transforms/layouts change.
+	var spawn_position = conveyor.to_global(Vector2(spawn_x, spawn_y))
 
 	# create new tile
 	var new_tile = TileScene.instantiate()
+	if new_tile.has_method("set_scale_bounds_from_target_size"):
+		new_tile.set_scale_bounds_from_target_size(runtime_tile_size)
 	new_tile.tile_missed.connect(_on_tile_missed)
-	# Use our new calculated position
-	new_tile.position = spawn_position
 	add_child(new_tile)
+	# Use world-space assignment after parenting for transform safety.
+	new_tile.global_position = spawn_position
 
 # Function to handle when a tile is missed
 # Applies penalty when a falling tile reaches the miss line.
@@ -102,6 +120,10 @@ func _on_tile_missed():
 # Attempts to drop the top held tile into the bin under the paddle.
 # Also enforces bin overflow loss and triggers combo resolution.
 func _on_drop_button_pressed():
+	# Keep drops deterministic: wait until previous drop animation lands.
+	# This prevents combo checks from racing against in-flight visuals.
+	if pending_drop_animations > 0:
+		return
 	var bin_index = get_target_bin_index_from_paddle()
 	if bin_index < 0:
 		return
@@ -126,9 +148,6 @@ func _on_drop_button_pressed():
 	# --- Create and animate the dropped tile ---
 	var new_dropped_tile = create_candy_stack_tile(dropped_tile_color)
 	
-	# Start the tile at the paddle's position
-	new_dropped_tile.global_position = paddle.global_position
-	
 	# Calculate where it should land in the stack
 	var stack_height = bin_contents[bin_index].size()
 	var target_position = get_bin_tile_target_position(bin_index, stack_height)
@@ -136,11 +155,27 @@ func _on_drop_button_pressed():
 	# Set the script and tell it where to go
 	new_dropped_tile.set_script(DroppedTile)
 	new_dropped_tile.target_position = target_position
+	new_dropped_tile.landed.connect(_on_dropped_tile_landed.bind(bin_index), CONNECT_ONE_SHOT)
+	new_dropped_tile.z_as_relative = false
+	new_dropped_tile.z_index = 6
 
 	# Add to the main scene to animate
 	bin_node.add_child(new_dropped_tile)
-	
-	# check for flaxes
+	# Start from paddle visual center; tile origin is top-left.
+	new_dropped_tile.global_position = Vector2(
+		get_paddle_center_x() - (runtime_tile_size.x * 0.5),
+		paddle.global_position.y
+	)
+	pending_drop_animations += 1
+
+func _on_dropped_tile_landed(bin_index):
+	# Track outstanding drop animations; only resolve KLAXes once all
+	# in-flight drops are settled so board state and visuals stay in sync.
+	pending_drop_animations = max(0, pending_drop_animations - 1)
+	if pending_drop_animations > 0:
+		return
+	# Resolve combinations only after drop animation finishes.
+	# This avoids visual/state conflicts during in-flight tile movement.
 	process_flax_checks(bin_index)
 
 # Main function to trigger all Klax checks
@@ -257,6 +292,7 @@ func check_for_diagonal_flaxes() -> bool:
 func clear_bin_visual(bin_node):
 	for child in bin_node.get_children():
 		if child.has_meta("is_stack_tile") and child.get_meta("is_stack_tile"):
+			# Use deferred deletion because this can run during signal emission.
 			child.queue_free()
 
 # Rebuilds one bin's stacked tile visuals from `bin_contents`.
@@ -267,77 +303,222 @@ func rebuild_bin_visual(bin_index):
 	for stack_index in range(bin_contents[bin_index].size()):
 		var tile_color = bin_contents[bin_index][stack_index]
 		var tile = create_candy_stack_tile(tile_color)
-		tile.global_position = get_bin_tile_target_position(bin_index, stack_index + 1)
 		bin_node.add_child(tile)
+		tile.global_position = get_bin_tile_target_position(bin_index, stack_index + 1)
 
 # Converts a bin index + stack height into world-space tile position.
 # Height is 1-based: 1 is bottom tile, increasing upward.
 func get_bin_tile_target_position(bin_index, stack_height) -> Vector2:
 	var bin_node = bins.get_child(bin_index)
 	var bin_visual = bin_node.get_node("ColorRect")
-	var target_x = bin_visual.global_position.x + (bin_visual.size.x - BIN_TILE_SIZE.x) / 2.0
-	var target_y = bin_visual.global_position.y + bin_visual.size.y - (stack_height * BIN_TILE_SIZE.y)
+	var bin_scale = bin_node.global_scale
+	# Convert bin and tile dimensions into the same (scaled) world-space
+	# units so placement remains correct after layout scaling changes.
+	var scaled_bin_size = Vector2(
+		bin_visual.size.x * bin_scale.x,
+		bin_visual.size.y * bin_scale.y
+	)
+	var scaled_tile_size = Vector2(
+		runtime_tile_size.x * bin_node.global_scale.x,
+		runtime_tile_size.y * bin_node.global_scale.y
+	)
+	var target_x = bin_visual.global_position.x + (scaled_bin_size.x - scaled_tile_size.x) / 2.0
+	var target_y = bin_visual.global_position.y + scaled_bin_size.y - (stack_height * scaled_tile_size.y)
 	return Vector2(target_x, target_y)
 
 # Finds which bin is currently "under" the paddle by horizontal position.
 # This avoids brittle Area2D layer/mask overlap dependencies.
 func get_target_bin_index_from_paddle() -> int:
-	var paddle_center_x = paddle.global_position.x + 60.0
+	var paddle_center_x = get_paddle_center_x()
 	for i in range(bins.get_child_count()):
-		var bin_visual = bins.get_child(i).get_node("ColorRect")
+		var bin_node = bins.get_child(i)
+		var bin_visual = bin_node.get_node("ColorRect")
 		var left = bin_visual.global_position.x
-		var right = left + bin_visual.size.x
+		var right = left + (bin_visual.size.x * bin_node.global_scale.x)
+		# Pick the bin whose visible x-range contains the paddle center.
 		if paddle_center_x >= left and paddle_center_x <= right:
 			return i
 	return -1
+
+# Returns paddle center x in world-space for robust bin targeting/drop alignment.
+func get_paddle_center_x() -> float:
+	if paddle.has_node("PaddleSprite"):
+		var paddle_visual = paddle.get_node("PaddleSprite") as Sprite2D
+		# Sprite2D is centered by default, so global_position is already center.
+		if paddle_visual:
+			return paddle_visual.global_position.x
+	if paddle.has_node("ColorRect"):
+		var paddle_visual = paddle.get_node("ColorRect") as ColorRect
+		if paddle_visual:
+			# `ColorRect` (Control) has no `global_scale`; use parent node scale.
+			return paddle_visual.global_position.x + (paddle_visual.size.x * paddle.global_scale.x * 0.5)
+	return paddle.global_position.x
 
 # Spawns a dropped tile that keeps falling when a bin is full.
 # This tile is intentionally not connected to miss-life logic because
 # the life penalty is applied immediately by the bin rejection.
 func spawn_rejected_falling_tile(tile_color, bin_index):
+	# Build a transient brick visual and attach rejection physics behavior.
 	var rejected_tile = create_candy_stack_tile(tile_color)
 	rejected_tile.set_script(RejectedTile)
 	rejected_tile.global_position = paddle.global_position
+	rejected_tile.z_as_relative = false
+	rejected_tile.z_index = 6
 	
-	var bin_visual = bins.get_child(bin_index).get_node("ColorRect")
-	var bin_center_x = bin_visual.global_position.x + bin_visual.size.x * 0.5
+	# Push rejected tiles away from the bin center for a clear "bounce off" cue.
+	var bin_node = bins.get_child(bin_index)
+	var bin_visual = bin_node.get_node("ColorRect")
+	var bin_center_x = bin_visual.global_position.x + (bin_visual.size.x * bin_node.global_scale.x * 0.5)
 	var push_dir = sign(rejected_tile.global_position.x - bin_center_x)
 	if push_dir == 0:
-		push_dir = 1
+		push_dir = 1 if (bin_index % 2 == 0) else -1
 	
 	rejected_tile.launch_velocity = Vector2(340.0 * push_dir, -180.0)
 	add_child(rejected_tile)
 
 # Applies a bright "candy" visual treatment to HUD and playfield.
 func apply_candy_style():
-	build_perspective_backdrop()
-	build_conveyor_plane_visual()
-	RenderingServer.set_default_clear_color(Color("0a0f1f"))
+	if USE_REFERENCE_BELT_BACKGROUND:
+		apply_reference_belt_background()
+		apply_reference_layout()
+	else:
+		build_perspective_backdrop()
+		build_conveyor_plane_visual()
+	# Keep unused screen regions pure black behind all art.
+	RenderingServer.set_default_clear_color(Color.BLACK)
 	$ConveyorBelt.color = Color(0, 0, 0, 0)
 	
 	var score_label = $UI/ScoreLabel
 	var lives_label = $UI/LivesLabel
 	score_label.add_theme_color_override("font_color", Color("f4f7ff"))
 	lives_label.add_theme_color_override("font_color", Color("f4f7ff"))
-	score_label.add_theme_color_override("font_outline_color", Color("101a42"))
-	lives_label.add_theme_color_override("font_outline_color", Color("101a42"))
-	score_label.add_theme_constant_override("outline_size", 5)
-	lives_label.add_theme_constant_override("outline_size", 5)
+	score_label.add_theme_color_override("font_outline_color", Color("060b1f"))
+	lives_label.add_theme_color_override("font_outline_color", Color("060b1f"))
+	score_label.add_theme_constant_override("outline_size", 7)
+	lives_label.add_theme_constant_override("outline_size", 7)
 	score_label.add_theme_font_size_override("font_size", 40)
 	lives_label.add_theme_font_size_override("font_size", 40)
 	score_label.position = Vector2(178, 318)
 	lives_label.position = Vector2(178, 360)
 	
 	var button_visual = $UI/DropButton/ColorRect
-	button_visual.color = Color("f04770")
-	button_visual.size = Vector2(90, 90)
-	button_visual.position = Vector2(-45, -45)
+	# Remove the temporary red-square look; keep TouchScreenButton interaction.
+	button_visual.visible = false
 	
 	for i in range(bins.get_child_count()):
-		var bin_visual = bins.get_child(i).get_node("ColorRect")
-		# Bins are neutral machine slots; color should come from tiles only.
-		bin_visual.color = color_with_alpha("cdd4e8", 0.16)
-	build_bin_slot_planes()
+		var bin_visual = bins.get_child(i).get_node_or_null("ColorRect")
+		if bin_visual == null:
+			continue
+		if USE_REFERENCE_BELT_BACKGROUND:
+			# Keep collision/placement rect but let tray PNG provide visuals.
+			bin_visual.color = color_with_alpha("254278", 0.08)
+		else:
+			# Bins are neutral machine slots; color should come from tiles only.
+			bin_visual.color = color_with_alpha("cdd4e8", 0.16)
+	if not USE_REFERENCE_BELT_BACKGROUND:
+		build_bin_slot_planes()
+
+func apply_reference_belt_background():
+	var old = get_node_or_null("ReferenceBackground")
+	if old:
+		old.queue_free()
+	if belt_background_texture == null:
+		return
+	
+	var bg = Sprite2D.new()
+	bg.name = "ReferenceBackground"
+	bg.texture = belt_background_texture
+	bg.centered = false
+	bg.position = Vector2.ZERO
+	bg.z_as_relative = false
+	# Force reference background fully behind gameplay/UI layers.
+	bg.z_index = -1000
+	add_child(bg)
+	move_child(bg, 0)
+	
+	# Use the full reference image (no cropping).
+	bg.region_enabled = false
+	
+	# Fit full image to width while keeping aspect ratio.
+	var tex_size = belt_background_texture.get_size()
+	if tex_size.x > 0 and tex_size.y > 0:
+		var scale_ratio = 700.0 / tex_size.x
+		bg.scale = Vector2.ONE * scale_ratio
+		var draw_size = tex_size * scale_ratio
+		bg.position = Vector2((720.0 - draw_size.x) * 0.5, 0.0)
+
+# Applies a readability-focused layout tuned for the reference belt image.
+func apply_reference_layout():
+	# Hide procedural conveyor because the reference image already contains one.
+	$ConveyorBelt.visible = false
+	# Reposition/scale core gameplay nodes to fit the composition in the image.
+	bins.scale = Vector2(0.58, 0.58)
+	bins.position = Vector2(170, 448)
+	normalize_bin_visuals_and_tile_size()
+	paddle.scale = Vector2(0.78, 0.78)
+	paddle.position = Vector2(307, 940)
+	$UI/ScoreLabel.position = Vector2(30, 44)
+	$UI/LivesLabel.position = Vector2(494, 44)
+	$UI/DropButton.position = Vector2(628, 1136)
+	# Any scale/position change can shift stack placement, so normalize and
+	# rebuild all bin visuals immediately after layout updates.
+	for i in range(bin_contents.size()):
+		rebuild_bin_visual(i)
+
+# Keeps every bin visually identical and derives tile size from
+# bin height and `MAX_BIN_HEIGHT` so stacks stay proportional.
+func normalize_bin_visuals_and_tile_size():
+	var uniform_bin_size = Vector2(104, 178)
+	var uniform_y = 976.0
+	var uniform_start_x = 56.0
+	var uniform_spacing = 118.0
+	
+	for i in range(bins.get_child_count()):
+		var bin_node = bins.get_child(i)
+		# Normalize per-bin transforms first; some scene bins have different
+		# authored offsets which otherwise create uneven apparent heights.
+		bin_node.position = Vector2.ZERO
+		bin_node.scale = Vector2.ONE
+		var bin_visual = bin_node.get_node("ColorRect")
+		bin_visual.position = Vector2(uniform_start_x + (i * uniform_spacing), uniform_y)
+		bin_visual.size = uniform_bin_size
+	
+	# One single tray image should visually cover all 5 bins as one landing area.
+	var tray_x = uniform_start_x
+	var tray_y = uniform_y
+	var tray_width = ((bins.get_child_count() - 1) * uniform_spacing) + uniform_bin_size.x
+	var tray_size = Vector2(tray_width, uniform_bin_size.y)
+	apply_landing_tray_visual_single(Vector2(tray_x, tray_y), tray_size)
+	
+	# Final landed tile height is exactly one bin slot:
+	# bin_height divided by max tiles that fit in one bin.
+	var per_tile_height = uniform_bin_size.y / float(MAX_BIN_HEIGHT)
+	var per_tile_width = floor(uniform_bin_size.x * 0.72)
+	runtime_tile_size = Vector2(per_tile_width, per_tile_height)
+
+# Adds/updates one sprite-based tray visual spanning all bins.
+func apply_landing_tray_visual_single(top_left: Vector2, target_size: Vector2):
+	# Remove accidental legacy tray attached under `Bins`.
+	var legacy = bins.get_node_or_null("LandingTraySprite")
+	if legacy:
+		legacy.queue_free()
+	
+	# Keep the tray outside the bin container so bin child loops remain gameplay-only.
+	var sprite = get_node_or_null("LandingTraySprite")
+	if sprite == null:
+		sprite = Sprite2D.new()
+		sprite.name = "LandingTraySprite"
+		sprite.centered = false
+		sprite.z_as_relative = false
+		sprite.z_index = 3
+		add_child(sprite)
+	if landing_tray_texture == null:
+		return
+	sprite.texture = landing_tray_texture
+	sprite.position = top_left
+	var tex_size = landing_tray_texture.get_size()
+	if tex_size.x > 0 and tex_size.y > 0:
+		sprite.scale = Vector2(target_size.x / tex_size.x, target_size.y / tex_size.y)
 
 # Builds retro perspective grid + machine deck to push the 2.5D vibe.
 func build_perspective_backdrop():
@@ -516,11 +697,12 @@ func build_bin_slot_planes():
 
 # Builds one glossy stack tile visual used in bins.
 func create_candy_stack_tile(tile_color) -> Node2D:
+	# Stack tiles are pseudo-3D polygon bricks so visuals match the scene style.
 	var tile = Node2D.new()
 	tile.set_meta("is_stack_tile", true)
 	
-	var w = BIN_TILE_SIZE.x
-	var h = BIN_TILE_SIZE.y
+	var w = runtime_tile_size.x
+	var h = runtime_tile_size.y
 	var d = 6.0
 	var slant = 8.0
 	
@@ -572,6 +754,7 @@ func create_candy_stack_tile(tile_color) -> Node2D:
 	return tile
 
 func color_with_alpha(hex_color: String, alpha: float) -> Color:
+	# Small helper for readable color definitions with explicit alpha values.
 	var c = Color(hex_color)
 	c.a = alpha
 	return c

@@ -5,11 +5,10 @@ const SPEED = 400
 var held_tiles = []
 const MAX_TILES = 5
 var DESKTOP_DEBUG_INPUT_ENABLED = OS.has_feature("editor")
-const CANDY_PADDLE_COLOR = Color("4a63b8")
 
 # Add this line to get a reference to the container
 @onready var held_tiles_container = $VBoxContainer
-@onready var paddle_visual = $ColorRect
+@onready var paddle_visual = $PaddleSprite
 
 # We'll use a variable to track movement direction
 var move_direction = 0
@@ -44,9 +43,8 @@ func _physics_process(_delta):
 	
 	# Keep paddle inside the visible play area.
 	var viewport_width = get_viewport_rect().size.x
-	var half_width = 60.0
+	var half_width = 37.0
 	global_position.x = clamp(global_position.x, half_width, viewport_width - half_width)
-	apply_paddle_visual_style()
 
 # This function is called by the Area2D's signal
 # Triggered when the paddle catch zone overlaps another Area2D.
@@ -109,7 +107,8 @@ func update_held_tiles_display():
 		held_tiles_container.add_child(visual_tile)
 
 func apply_paddle_visual_style():
+	# Re-apply base visual state every frame to prevent accidental
+	# transparency/modulate side effects from other scene updates.
 	paddle_visual.visible = true
 	paddle_visual.modulate = Color(1, 1, 1, 1)
 	paddle_visual.self_modulate = Color(1, 1, 1, 1)
-	paddle_visual.color = CANDY_PADDLE_COLOR

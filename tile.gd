@@ -19,9 +19,16 @@ signal tile_missed
 # --- 2.5D Perspective Variables ---
 const TOP_Y = 150.0
 const BOTTOM_Y = 950.0
-const START_SCALE = 0.2
-const END_SCALE = 1.0
+var start_scale = 0.2
+var end_scale = 1.0
 var speed = 200.0
+
+# Sets conveyor tile perspective scale so bottom-size matches target bounds.
+func set_scale_bounds_from_target_size(target_size: Vector2):
+	var height_scale = max(0.01, target_size.y / 10.0)
+	var width_scale = max(0.01, target_size.x / 70.0)
+	end_scale = min(height_scale, width_scale)
+	start_scale = end_scale * 0.2
 
 # Initializes a new falling tile with random color and base scale.
 # Also registers this node in the catchable `tiles` group.
@@ -91,7 +98,7 @@ func _ready():
 	add_child(shadow_rect)
 	
 	# Set the initial scale
-	scale = Vector2(START_SCALE, START_SCALE)
+	scale = Vector2(start_scale, start_scale)
 
 # Advances tile movement and perspective scaling each frame.
 # Emits `tile_missed` once the tile passes the miss threshold.
@@ -105,7 +112,7 @@ func _process(delta):
 
 	# Linearly interpolate the scale based on the progress
 	# This makes the tile get bigger as it moves down
-	var new_scale = lerp(START_SCALE, END_SCALE, progress)
+	var new_scale = lerp(start_scale, end_scale, progress)
 	scale = Vector2(new_scale, new_scale)
 	
 	# Grow and darken shadow as tile "approaches" the camera.
