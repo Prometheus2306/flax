@@ -80,7 +80,7 @@ func _on_drop_button_pressed():
 				# --- Create and animate the dropped tile ---
 				var new_dropped_tile = ColorRect.new()
 				new_dropped_tile.color = dropped_tile_color
-				new_dropped_tile.size = Vector2(70, 10) # Or whatever size you prefer
+				new_dropped_tile.size = Vector2(70, 10)
 				new_dropped_tile.name = "Bin{}_Tile{}".format(i, bin_contents[i].size())
 				
 				# Start the tile at the paddle's position

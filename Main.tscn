@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://c4vmvhhjj4urq"]
+[gd_scene format=3 uid="uid://c4vmvhhjj4urq"]
 
 [ext_resource type="PackedScene" uid="uid://e7c0obg0imqr" path="res://paddle.tscn" id="1_glv2v"]
 [ext_resource type="Script" uid="uid://c50llbw3je4qt" path="res://main.gd" id="1_uu6xs"]
@@ -9,110 +9,110 @@ size = Vector2(109, 21.0625)
 [sub_resource type="CircleShape2D" id="CircleShape2D_uu6xs"]
 radius = 42.39
 
-[node name="Main" type="Node2D"]
+[node name="Main" type="Node2D" unique_id=1538343781]
 script = ExtResource("1_uu6xs")
 
-[node name="ConveyorBelt" type="Polygon2D" parent="."]
+[node name="ConveyorBelt" type="Polygon2D" parent="." unique_id=1459007131]
 position = Vector2(-4, 5)
 color = Color(0, 0.380392, 0.454902, 0.968627)
 polygon = PackedVector2Array(260, 150, 460, 150, 660, 950, 60, 950)
 
-[node name="Bins" type="Node2D" parent="."]
+[node name="Bins" type="Node2D" parent="." unique_id=197391300]
 
-[node name="Area2D" type="Area2D" parent="Bins"]
+[node name="Area2D" type="Area2D" parent="Bins" unique_id=805336645]
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D" unique_id=838627076]
 position = Vector2(111, 944)
 shape = SubResource("RectangleShape2D_uu6xs")
 
-[node name="ColorRect" type="ColorRect" parent="Bins/Area2D"]
+[node name="ColorRect" type="ColorRect" parent="Bins/Area2D" unique_id=1600484578]
 offset_left = 60.0
 offset_top = 989.0
 offset_right = 160.0
 offset_bottom = 1158.0
 color = Color(0.627451, 0.184314, 0, 0.117647)
 
-[node name="Area2D2" type="Area2D" parent="Bins"]
+[node name="Area2D2" type="Area2D" parent="Bins" unique_id=1336507230]
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D2"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D2" unique_id=613426207]
 position = Vector2(234, 944)
 shape = SubResource("RectangleShape2D_uu6xs")
 
-[node name="ColorRect" type="ColorRect" parent="Bins/Area2D2"]
+[node name="ColorRect" type="ColorRect" parent="Bins/Area2D2" unique_id=1470716549]
 offset_left = 181.0
 offset_top = 989.0
 offset_right = 281.0
 offset_bottom = 1157.0
 color = Color(0.627451, 0.184314, 0, 0.117647)
 
-[node name="Area2D3" type="Area2D" parent="Bins"]
+[node name="Area2D3" type="Area2D" parent="Bins" unique_id=1118183292]
 position = Vector2(1, -3)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D3"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D3" unique_id=955992794]
 position = Vector2(352, 946)
 shape = SubResource("RectangleShape2D_uu6xs")
 
-[node name="ColorRect" type="ColorRect" parent="Bins/Area2D3"]
+[node name="ColorRect" type="ColorRect" parent="Bins/Area2D3" unique_id=867673762]
 offset_left = 300.0
 offset_top = 988.0
 offset_right = 397.0
 offset_bottom = 1152.0
 color = Color(0.627451, 0.184314, 0, 0.117647)
 
-[node name="Area2D4" type="Area2D" parent="Bins"]
+[node name="Area2D4" type="Area2D" parent="Bins" unique_id=1918319645]
 position = Vector2(7, 11)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D4"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D4" unique_id=1561503847]
 position = Vector2(468, 931)
 shape = SubResource("RectangleShape2D_uu6xs")
 
-[node name="ColorRect" type="ColorRect" parent="Bins/Area2D4"]
+[node name="ColorRect" type="ColorRect" parent="Bins/Area2D4" unique_id=1740981846]
 offset_left = 421.0
 offset_top = 979.0
 offset_right = 521.0
 offset_bottom = 1146.0
 color = Color(0.627451, 0.184314, 0, 0.117647)
 
-[node name="Area2D5" type="Area2D" parent="Bins"]
+[node name="Area2D5" type="Area2D" parent="Bins" unique_id=1302491398]
 position = Vector2(15, 6)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D5"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Bins/Area2D5" unique_id=1329539341]
 position = Vector2(582, 936)
 shape = SubResource("RectangleShape2D_uu6xs")
 
-[node name="ColorRect" type="ColorRect" parent="Bins/Area2D5"]
+[node name="ColorRect" type="ColorRect" parent="Bins/Area2D5" unique_id=1637717420]
 offset_left = 536.0
 offset_top = 985.0
 offset_right = 636.0
 offset_bottom = 1150.0
 color = Color(0.627451, 0.184314, 0, 0.117647)
 
-[node name="TileSpawner" type="Timer" parent="."]
+[node name="TileSpawner" type="Timer" parent="." unique_id=525340954]
 wait_time = 2.0
 autostart = true
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1055830487]
 
-[node name="ScoreLabel" type="Label" parent="UI"]
+[node name="ScoreLabel" type="Label" parent="UI" unique_id=1868912625]
 offset_left = 642.0
 offset_top = 17.0
 offset_right = 685.0
 offset_bottom = 40.0
 text = "Score"
 
-[node name="LivesLabel" type="Label" parent="UI"]
+[node name="LivesLabel" type="Label" parent="UI" unique_id=1564567024]
 offset_left = 574.0
 offset_top = 16.0
 offset_right = 614.0
 offset_bottom = 39.0
 text = "Lives"
 
-[node name="DropButton" type="TouchScreenButton" parent="UI"]
+[node name="DropButton" type="TouchScreenButton" parent="UI" unique_id=1776156202]
 position = Vector2(355, 1233)
 shape = SubResource("CircleShape2D_uu6xs")
 passby_press = true
 
-[node name="ColorRect" type="ColorRect" parent="UI/DropButton"]
+[node name="ColorRect" type="ColorRect" parent="UI/DropButton" unique_id=452729730]
 offset_left = -29.0
 offset_top = -27.0
 offset_right = 26.0
@@ -120,5 +120,5 @@ offset_bottom = 28.0
 color = Color(0.760784, 1, 0.431373, 1)
 metadata/_edit_use_anchors_ = true
 
-[node name="Paddle" parent="." instance=ExtResource("1_glv2v")]
+[node name="Paddle" parent="." unique_id=1954122970 instance=ExtResource("1_glv2v")]
 position = Vector2(292, 936)
