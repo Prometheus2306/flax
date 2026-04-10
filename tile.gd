@@ -1,8 +1,17 @@
 # Tile.gd
 extends Area2D
 class_name Tile
-var colors = [Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW, Color.PURPLE]
+var colors = [
+	Color("ff6f73"),
+	Color("6ec1ff"),
+	Color("ffe26f"),
+	Color("7de38c"),
+	Color("d58cff")
+]
 var current_color: Color
+var has_forced_color = false
+var forced_color = Color.WHITE
+var shadow_rect: ColorRect
 
 # Signal to notify when a tile is missed
 signal tile_missed
@@ -14,18 +23,78 @@ const START_SCALE = 0.2
 const END_SCALE = 1.0
 var speed = 200.0
 
+# Initializes a new falling tile with random color and base scale.
+# Also registers this node in the catchable `tiles` group.
 func _ready():
 	
 		# Add the tile to the "tiles" group
 	add_to_group("tiles")
 	
-	# Randomly assign a color
-	current_color = colors[randi() % colors.size()]
-	$ColorRect.color = current_color
+	# Use forced color when supplied (e.g. rejected bin drops), otherwise random.
+	if has_forced_color:
+		current_color = forced_color
+	else:
+		current_color = colors[randi() % colors.size()]
+	$ColorRect.visible = false
+	
+	var w = 70.0
+	var h = 10.0
+	var d = 4.0
+	var slant = 8.0
+	
+	var top_face = Polygon2D.new()
+	top_face.polygon = PackedVector2Array([
+		Vector2(0, d),
+		Vector2(w, d),
+		Vector2(w - slant, 0),
+		Vector2(slant, 0)
+	])
+	top_face.color = current_color.lightened(0.18)
+	add_child(top_face)
+	
+	var front_face = Polygon2D.new()
+	front_face.polygon = PackedVector2Array([
+		Vector2(0, d),
+		Vector2(w, d),
+		Vector2(w, h),
+		Vector2(0, h)
+	])
+	front_face.color = current_color
+	add_child(front_face)
+	
+	var right_face = Polygon2D.new()
+	right_face.polygon = PackedVector2Array([
+		Vector2(w, d),
+		Vector2(w - slant, 0),
+		Vector2(w - slant, h - d),
+		Vector2(w, h)
+	])
+	right_face.color = current_color.darkened(0.35)
+	add_child(right_face)
+	
+	for stud_idx in range(2):
+		var stud = Polygon2D.new()
+		var sx = 18 + stud_idx * 26
+		stud.polygon = PackedVector2Array([
+			Vector2(sx, d - 1),
+			Vector2(sx + 12, d - 1),
+			Vector2(sx + 10, d - 3),
+			Vector2(sx + 2, d - 3)
+		])
+		stud.color = current_color.lightened(0.35)
+		add_child(stud)
+	
+	shadow_rect = ColorRect.new()
+	shadow_rect.color = Color(0, 0, 0, 0.18)
+	shadow_rect.size = Vector2(48, 4)
+	shadow_rect.position = Vector2(11, 12)
+	add_child(shadow_rect)
 	
 	# Set the initial scale
 	scale = Vector2(START_SCALE, START_SCALE)
 
+# Advances tile movement and perspective scaling each frame.
+# Emits `tile_missed` once the tile passes the miss threshold.
 func _process(delta):
 	# Move the tile down the screen
 	position.y += speed * delta
@@ -38,6 +107,12 @@ func _process(delta):
 	# This makes the tile get bigger as it moves down
 	var new_scale = lerp(START_SCALE, END_SCALE, progress)
 	scale = Vector2(new_scale, new_scale)
+	
+	# Grow and darken shadow as tile "approaches" the camera.
+	if shadow_rect:
+		shadow_rect.scale.x = lerp(0.5, 1.2, progress)
+		shadow_rect.modulate.a = lerp(0.08, 0.26, progress)
+		shadow_rect.position.y = lerp(11.0, 14.0, progress)
 	
 	# UPDATED: Emit a signal when the tile is missed
 	if position.y > BOTTOM_Y + 20: # A little past the paddle's line
