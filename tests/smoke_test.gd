@@ -62,7 +62,11 @@ func _run() -> void:
 	check(main.state == main.State.MENU, "menu")
 
 	await _input_tests(main)
+	_effects_and_perspective_tests(main)
 
+	root.remove_child(main)
+	main.free()
+	await process_frame
 	print("FAILURES: ", failures, "  (", checks, " checks)")
 	quit(1 if failures > 0 else 0)
 
@@ -155,6 +159,157 @@ func _input_tests(main) -> void:
 
 	# Save file round trip keeps the best score.
 	check(main.best >= 0, "best score tracked")
+
+
+## Verifies 2.5D perspective math, procedural sprite generation, and combo explosion lifecycle.
+func _effects_and_perspective_tests(main) -> void:
+	# 1. Procedural fluid & explosion sprites + audio bank
+	check(main.view._tex_droplet != null and main.view._tex_droplet.get_size() == Vector2(48, 48), "fluid droplet sprite generated")
+	check(main.view._tex_splash != null and main.view._tex_splash.get_size() == Vector2(64, 64), "fluid splash sprite generated")
+	check(main.view._tex_bubble != null and main.view._tex_bubble.get_size() == Vector2(48, 48), "fluid bubble sprite generated")
+	check(main.view._tex_star != null and main.view._tex_star.get_size() == Vector2(64, 64), "star sprite generated")
+	check(main.view._tex_spark != null and main.view._tex_spark.get_size() == Vector2(48, 48), "spark sprite generated")
+	check(main.view._tex_glow != null and main.view._tex_glow.get_size() == Vector2(48, 48), "glow sprite generated")
+	check(main.view._tex_shard != null and main.view._tex_shard.get_size() == Vector2(32, 32), "shard sprite generated")
+	check(main.sfx._bank.has("boom") and main.sfx._bank["boom"] != null, "boom explosion sfx generated")
+
+	# 2. 2.5D perspective ramp geometry
+	check(is_equal_approx(main.belt_depth(main.conveyor_top), 0.0), "belt_depth at horizon is 0")
+	check(is_equal_approx(main.belt_depth(main.paddle_top), 1.0), "belt_depth at paddle is 1")
+	check(is_equal_approx(main.belt_scale(main.conveyor_top), main.BELT_TOP_SCALE), "belt_scale at horizon matches BELT_TOP_SCALE")
+	check(is_equal_approx(main.belt_scale(main.paddle_top), 1.0), "belt_scale at paddle is 1")
+	check(main.belt_lane_w(main.conveyor_top) < main.belt_lane_w(main.paddle_top), "lanes widen from horizon to paddle")
+	for c in 5:
+		check(is_equal_approx(main.belt_lane_x(float(c), main.paddle_top), main.lane_left(c)), "2.5D lane left aligns with bin column at paddle")
+		check(is_equal_approx(main.belt_lane_center(c, main.paddle_top), main.lane_center(c)), "2.5D lane center aligns with bin center at paddle")
+		check(main.belt_lane_x(float(c), main.conveyor_top) < main.belt_lane_x(float(c + 1), main.conveyor_top), "horizon lanes strictly ordered")
+		# Verify moving conveyor tiles start small far away, preserve un-warped aspect ratio,
+		# map 1:1 into Rutsche spaces, and reach exact drop-box size at the paddle.
+		var sh: float = main.belt_slot_h()
+		var top_rect: Rect2 = main.view.belt_tile_rect(c, main.conveyor_top, sh)
+		var bot_rect: Rect2 = main.view.belt_tile_rect(c, main.paddle_top - sh, sh)
+		var bin_rect: Rect2 = main.view.tile_rect(c, main.bins_top, main.cell_h)
+		check(top_rect.size.x < bot_rect.size.x * 0.45 and top_rect.size.y < bot_rect.size.y * 0.45, "horizon Rutsche tiles start much smaller than foreground tiles")
+		check(is_equal_approx(bot_rect.size.y, main.cell_h), "bottom Rutsche space reaches exact cell_h height at paddle")
+		check(absf(bot_rect.size.x - bin_rect.size.x) < 6.0, "bottom Rutsche space width matches drop-box tile width")
+		var expected_aspect: float = top_rect.size.x / top_rect.size.y
+		for step_i in 6:
+			var y_test: float = lerpf(main.conveyor_top, main.paddle_top - sh, float(step_i) / 5.0)
+			var b_rect: Rect2 = main.view.belt_tile_rect(c, y_test, sh)
+			var aspect: float = b_rect.size.x / b_rect.size.y
+			check(is_equal_approx(aspect, expected_aspect), "moving belt tile preserves un-warped aspect ratio")
+			var snapped_y: float = main.snap_to_belt_slot(y_test)
+			var phase_rem: float = fposmod(snapped_y - main.conveyor_top - main.belt_scroll, sh)
+			check(is_zero_approx(phase_rem) or is_equal_approx(phase_rem, sh), "snapped tile maps exactly onto a dedicated Rutsche slot")
+
+	# 3. Multi-sprite explosion & combo beam spawning and cleanup
+	main.start_run()
+	main.wave_delay = 99.0
+	# Create a simultaneous horizontal + diagonal combo:
+	# Horizontal color 2 at (0,0), (1,0), (2,0)
+	# Diagonal color 3 at (1,1), (2,2), (3,3)
+	main.board.push(0, 2)
+	main.board.push(1, 2)
+	main.board.push(1, 3)
+	main.board.push(2, 2)
+	main.board.push(2, 0)
+	main.board.push(2, 3)
+	main.board.push(3, 1)
+	main.board.push(3, 0)
+	main.board.push(3, 1)
+	main.board.push(3, 3)
+	main.check_pending = true
+	main.step(1.0 / 60.0)
+
+	check(main.phase == main.Phase.CLEARING, "combo enters CLEARING phase")
+	check(main.combo_beams.size() == 2, "two combo beams spawned for double line clear")
+	check(main.fluid_splats.size() == 6, "fluid splats spawned for each of 6 cleared tiles")
+	check(main.shockwaves.size() == 7, "shockwaves spawned for each of 6 cleared tiles plus center")
+	check(main.starbursts.size() == 7, "starbursts spawned for each of 6 cleared tiles plus center")
+	check(main.particles.size() >= 150, "explosion spawns abundant sprite particles")
+
+	var kinds_seen := {}
+	for p in main.particles:
+		kinds_seen[p.get("kind", "")] = true
+	for k in ["droplet", "splash", "bubble", "star", "spark", "glow", "shard", "glyph"]:
+		check(kinds_seen.has(k), "explosion includes particle sprite kind: " + k)
+
+	# Step until all effects finish and verify cleanup.
+	for i in 120:
+		main.step(1.0 / 60.0)
+	check(main.phase == main.Phase.IDLE, "board returns to IDLE after clear & fall")
+	check(main.combo_beams.is_empty(), "combo beams cleaned up after lifetime")
+	check(main.fluid_splats.is_empty(), "fluid splats cleaned up after lifetime")
+	check(main.shockwaves.is_empty(), "shockwaves cleaned up after lifetime")
+	check(main.starbursts.is_empty(), "starbursts cleaned up after lifetime")
+	check(main.particles.is_empty(), "explosion particles cleaned up after lifetime")
+
+	# 4. Rewarded-ad continue flow & engagement integration
+	main.start_run()
+	main.wave_delay = 99.0
+	for r in 4:
+		main.board.push(0, r % 3)
+	main.lives = 1
+	main._lose_life()
+	check(main.state == main.State.GAME_OVER, "loss enters GAME_OVER")
+	check(main.engagement.can_offer_ad_continue(), "ad continue is offered on game over")
+	var pre_ad_speed: float = main.belt_speed
+	var continued: bool = main.watch_ad_to_continue()
+	check(continued and main.state == main.State.PLAYING and main.lives == 2, "watch_ad_to_continue revives player with 2 lives")
+	check(main.belt_speed <= pre_ad_speed, "post-ad DDA slows or maintains belt speed for smoother recovery")
+	check(main.board.height(0) == 3, "ad continue mercy blast clears top tile of nearly-full column")
+
+	# 5. "Slowy" Helper Spirit end-to-end mechanics (catch, flip, drop, combo-type gate & 0.5x belt speed)
+	main.start_run()
+	main.wave_delay = 99.0
+	main.slowy_combo_type = "horizontal"
+	var base_run_speed: float = main.belt_speed
+
+	# Spawn a belt tile carrying trapped Slowy, catch it, flip it back to the belt, re-catch, and drop into bin
+	main.held = [1]
+	main.held_spirits = [""]
+	main.paddle_lane = 2
+	main._catch({"lane": 2, "y": main.paddle_top, "color": 0, "vy": 0.0, "spirit": "slowy"})
+	check(main.held.size() == 2 and main.held_spirits.back() == "slowy", "catching Slowy tile stores spirit in held_spirits")
+	check(main.is_slowy_trapped(), "is_slowy_trapped() detects Slowy in held stack")
+	main.do_flip()
+	check(main.belt_tiles.back().get("spirit", "") == "slowy", "do_flip() tosses Slowy back onto the conveyor belt with its spirit intact")
+	var tossed: Dictionary = main.belt_tiles.pop_back()
+	main._catch(tossed)
+	main.do_drop()
+	for i in 20:
+		main.step(1.0 / 60.0)
+	check(main.board.get_spirit(2, 0) == "slowy", "dropping Slowy tile lands trapped Slowy in board bin")
+	check(main.is_slowy_trapped(), "is_slowy_trapped() detects Slowy on board")
+
+	# Try clearing Slowy's tile (2, 0) with a VERTICAL combo when HORIZONTAL is required -> should NOT free Slowy!
+	main.board.push(4, 3, "") # surviving bystander tile at (4, 0)
+	main.board.push(2, 0, "")
+	main.board.push(2, 0, "")
+	main.check_pending = true
+	for i in 40:
+		main.step(1.0 / 60.0)
+	check(not main.is_slowy_active(), "clearing Slowy with wrong combo type (vertical instead of horizontal) does NOT free Slowy")
+	check(main.board.get_spirit(4, 0) == "slowy", "Slowy hops to a surviving board tile when cleared by wrong combo type")
+	check(is_equal_approx(main.belt_speed, base_run_speed), "belt_speed remains un-halved when wrong combo type is used")
+
+	# Now clear a HORIZONTAL Klax while Slowy is on the board -> frees Slowy & halves belt speed!
+	main.board.push(0, 2, "")
+	main.board.push(1, 2, "")
+	main.board.push(2, 2, "")
+	main.check_pending = true
+	for i in 40:
+		main.step(1.0 / 60.0)
+	check(main.is_slowy_active(), "matching required combo type (horizontal) frees Slowy and activates power-up")
+	check(main.slowy_freed_count == 1, "slowy_freed_count increments when Slowy is freed")
+	check(is_equal_approx(main.belt_speed, base_run_speed * 0.5), "active Slowy reduces conveyor belt_speed to half (0.5x)")
+
+	# Step past Slowy's duration and verify belt_speed restores to normal
+	main.slowy_active_t = 0.05
+	main.step(0.10)
+	check(not main.is_slowy_active(), "Slowy deactivates after duration expires")
+	check(is_equal_approx(main.belt_speed, base_run_speed), "conveyor belt_speed restores to 1.0x after Slowy finishes")
+
 
 
 ## A deliberately simple bot: chase the lowest tile, then drop onto matching colors.

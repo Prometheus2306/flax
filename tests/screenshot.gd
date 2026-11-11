@@ -41,14 +41,42 @@ func _run() -> void:
 	await _shot("2_wave_banner")
 
 	_sim(main, 25.0, true)
+	# Ensure a trapped Slowy tile and combo-type UI highlight are visible in 3_playing
+	main.slowy_active_t = 0.0
+	main.slowy_combo_type = "diagonal"
+	if main.belt_tiles.size() > 0:
+		main.belt_tiles[0]["spirit"] = "slowy"
+	if main.board.height(2) > 0:
+		main.board.set_spirit(2, 0, "slowy")
+	main.view.queue_redraw()
 	await _shot("3_playing")
 
-	# Force a clear moment for the effects frame.
+	# Force a rich Double Klax (horizontal + diagonal) clear moment that frees Slowy!
 	main.board.reset()
-	for c in 3:
-		main.board.push(c, 1)
+	main.clearing_cells = []
+	main.phase = main.Phase.IDLE
+	main.slowy_combo_type = "diagonal"
+	main.board.push(0, 1)
+	main.board.push(1, 1)
+	main.board.push(2, 1)
+	main.board.push(1, 0)
+	main.board.push(2, 2)
+	main.board.push(2, 0, "slowy")
+	main.board.push(3, 3)
+	main.board.push(3, 2)
+	main.board.push(3, 3)
+	main.board.push(3, 0)
+	main.belt_tiles = [
+		{"lane": 0, "y": 210.0, "vy": 150.0, "toss": false, "color": 0, "spirit": ""},
+		{"lane": 3, "y": 330.0, "vy": 150.0, "toss": false, "color": 1, "spirit": ""},
+		{"lane": 1, "y": 465.0, "vy": 150.0, "toss": false, "color": 2, "spirit": ""},
+		{"lane": 4, "y": 600.0, "vy": 150.0, "toss": false, "color": 4, "spirit": ""},
+	]
+	main.set_lane(2)
+	main.held = [3, 0]
+	main.held_spirits = ["", ""]
 	main.check_pending = true
-	_sim(main, 0.12, false)
+	_sim(main, 0.08, false)
 	await _shot("4_clearing")
 
 	main.board.reset()
@@ -72,6 +100,8 @@ func _run() -> void:
 	main._lose_life()
 	main.game_over_t = 2.0
 	await _shot("7_gameover")
+	root.remove_child(main)
+	main.free()
 	quit()
 
 
