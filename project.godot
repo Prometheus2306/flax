@@ -16,22 +16,26 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 config/name="Flax"
 run/main_scene="uid://c4vmvhhjj4urq"
-config/features=PackedStringArray("4.6", "Mobile")
+config/quit_on_go_back=false
+config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 
 [display]
 
 window/size/viewport_width=720
 window/size/viewport_height=1280
+window/size/window_width_override=450
+window/size/window_height_override=800
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
 
-[layer_names]
+[input_devices]
 
-2d_physics/layer_1="padle"
+pointing/emulate_touch_from_mouse=true
 
 [rendering]
 
 renderer/rendering_method="mobile"
 textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.0705882, 0.0784314, 0.113725, 1)
